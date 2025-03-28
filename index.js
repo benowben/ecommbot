@@ -1,5 +1,5 @@
-const { NodeLogtail } = require("@logtail/node");
-const logtail = new NodeLogtail("LYMTqiYGvnoxWaQ6N63hNSix");
+const { Logtail } = require("@logtail/node");
+const logtail = new Logtail("LYMTqiYGvnoxWaQ6N63hNSix");
 
 const express = require('express');
 const fs = require('fs');
