@@ -1,5 +1,5 @@
-const { Logtail } = require("@logtail/node");
-const logtail = new Logtail(process.env.LOGTAIL_TOKEN);
+// const { Logtail } = require("@logtail/node");
+// const logtail = new Logtail(process.env.LOGTAIL_TOKEN);
 
 const express = require('express');
 const fs = require('fs');
@@ -80,19 +80,18 @@ app.post('/webhook', async (req, res) => {
         const rawText = event.message.text;
         const log = `[${new Date().toISOString()}] GROUP: ${event.source.groupId} USER: ${event.source.userId} TEXT: ${rawText}`;
         fs.appendFileSync('messages.log', log + '\n');
-        logtail.info(log);
+        console.log(log);
 
         const grouped = processGroupedText(rawText);
-        logtail.info('[TRANSFORMED]');
+        console.log('[TRANSFORMED]');
         for (let index = 0; index < grouped.length; index++) {
           const row = grouped[index];
           const line = `${index + 1}: ${row.join(' | ')}`;
           console.log(line);
-          logtail.info(line);
           try {
             await appendToSheet(row);
           } catch (err) {
-            logtail.error("Ошибка при записи в Google Sheets", err);
+            console.error("Ошибка при записи в Google Sheets", err);
           }
         }
       }
@@ -108,5 +107,4 @@ app.get('/', (req, res) => res.send('LINE bot is running'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server listening on ${PORT}`);
-  logtail.info(`Server listening on ${PORT}`);
 });
