@@ -1,5 +1,5 @@
 const { Logtail } = require("@logtail/node");
-const logtail = new Logtail("LYMTqiYGvnoxWaQ6N63hNSix");
+const logtail = new Logtail(process.env.LOGTAIL_TOKEN);
 
 const express = require('express');
 const fs = require('fs');
