@@ -1,7 +1,31 @@
 const express = require('express');
 const fs = require('fs');
+const { google } = require('googleapis');
 const app = express();
 app.use(express.json());
+
+// === АВТОРИЗАЦИЯ GOOGLE SHEETS ===
+const auth = new google.auth.GoogleAuth({
+  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
+  scopes: ['https://www.googleapis.com/auth/spreadsheets']
+});
+
+// === ФУНКЦИЯ ЗАПИСИ В ТАБЛИЦУ ===
+async function appendToSheet(rowData) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: 'v4', auth: client });
+
+  const spreadsheetId = '1jlk8TlKaVbySVw6j--9fOp2dWEN0I7O5QEYHrOWnL3c'; // ← ID из таблицы
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: 'A1',
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [rowData]
+    }
+  });
+}
 
 // === ФУНКЦИЯ ОБРАБОТКИ ТЕКСТА ===
 function processGroupedText(rawText) {
@@ -42,10 +66,10 @@ function processGroupedText(rawText) {
 }
 
 // === ВЕБХУК ===
-app.post('/webhook', (req, res) => {
+app.post('/webhook', async (req, res) => {
   const events = req.body.events;
   if (events) {
-    events.forEach(event => {
+    for (const event of events) {
       if (event.type === 'message' && event.message.type === 'text') {
         const rawText = event.message.text;
 
@@ -53,14 +77,20 @@ app.post('/webhook', (req, res) => {
         const log = `[${new Date().toISOString()}] GROUP: ${event.source.groupId} USER: ${event.source.userId} TEXT: ${rawText}\n`;
         fs.appendFileSync('messages.log', log);
 
-        // обрабатываем и выводим в лог Render
+        // обрабатываем
         const grouped = processGroupedText(rawText);
         console.log('[TRANSFORMED]');
-        grouped.forEach((row, index) => {
+        for (let index = 0; index < grouped.length; index++) {
+          const row = grouped[index];
           console.log(`${index + 1}: ${row.join(' | ')}`);
-        });
+          try {
+            await appendToSheet(row);
+          } catch (err) {
+            console.error('Ошибка при записи в Google Sheets:', err);
+          }
+        }
       }
-    });
+    }
   }
   res.sendStatus(200);
 });
