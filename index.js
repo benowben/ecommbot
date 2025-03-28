@@ -7,7 +7,10 @@ app.use(express.json());
 
 // === АВТОРИЗАЦИЯ GOOGLE SHEETS ===
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
+  credentials: {
+  client_email: "test@example.com",
+  private_key: "-----BEGIN PRIVATE KEY-----\\nABC\\n-----END PRIVATE KEY-----\\n"
+},
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
 
