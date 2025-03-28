@@ -10,8 +10,8 @@ app.use(express.json());
 // === АВТОРИЗАЦИЯ GOOGLE SHEETS ===
 const auth = new google.auth.GoogleAuth({
   credentials: {
-    client_email: "test@example.com",
-    private_key: "-----BEGIN PRIVATE KEY-----\\nABC\\n-----END PRIVATE KEY-----\\n"
+    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+    private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
   },
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
@@ -21,7 +21,7 @@ async function appendToSheet(rowData) {
   const client = await auth.getClient();
   const sheets = google.sheets({ version: 'v4', auth: client });
 
-  const spreadsheetId = '1jlk8TlKaVbySVw6j--9fOp2dWEN0I7O5QEYHrOWnL3c';
+  const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: 'A1',
