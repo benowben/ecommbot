@@ -41,12 +41,18 @@ function processGroupedText(rawText) {
   let fbBlock = '';
   let i = 0;
 
+  // дата в формате дд/мм/гг
+  const now = new Date();
+  const date = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)}`;
+
   while (i < lines.length) {
     const line = lines[i];
 
     if (line.includes('GG')) {
       if (row.length > 0) result.push(row);
-      row = [line];
+      const match = line.match(/GG[^\s]*/);
+      const orderNumber = match ? match[0] : line;
+      row = [date, orderNumber]; // вставляем дату и номер заказа
       i++;
       continue;
     }
