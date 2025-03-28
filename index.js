@@ -1,3 +1,4 @@
+console.log('=== BOT STARTED ===');
 const express = require('express');
 const fs = require('fs');
 const { google } = require('googleapis');
