@@ -1,5 +1,43 @@
 // Инициализация логирования
 const { Logtail } = require("@logtail/node");
+
+// Функция для логирования (будет видна в Render logs)
+function logToRender(message, type = 'INFO') {
+  const timestamp = new Date().toISOString();
+  // Render собирает все, что идет в console.log/error
+  if (type === 'ERROR') {
+    console.error(`[${timestamp}] [${type}] ${message}`);
+  } else {
+    console.log(`[${timestamp}] [${type}] ${message}`);
+  }
+}
+
+// Проверяем токен
+if (!process.env.LOGTAIL_TOKEN) {
+  logToRender('LOGTAIL_TOKEN не найден в переменных окружения', 'ERROR');
+  throw new Error('LOGTAIL_TOKEN не найден в переменных окружения');
+}
+
+try {
+  const logtail = new Logtail(process.env.LOGTAIL_TOKEN, {
+    sourceToken: process.env.LOGTAIL_TOKEN,
+    endpoint: 'https://in.logtail.com',
+    sync: true
+  });
+
+  logToRender('Попытка инициализации Logtail...');
+
+  // Проверяем инициализацию
+  logtail.info('Тестовое сообщение Logtail').then(() => {
+    logToRender('Logtail успешно инициализирован');
+  }).catch(error => {
+    logToRender(`Ошибка отправки тестового сообщения в Logtail: ${error.message}`, 'ERROR');
+  });
+
+} catch (error) {
+  logToRender(`Ошибка создания экземпляра Logtail: ${error.message}`, 'ERROR');
+}
+
 const express = require('express');
 const fs = require('fs');
 const { google } = require('googleapis');
