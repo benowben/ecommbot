@@ -7,6 +7,28 @@ const { google } = require('googleapis');
 const app = express();
 app.use(express.json());
 
+// === КОНСТАНТЫ ===
+const ORDER_TYPES = {
+  GG: {
+    pattern: /GG[^\s]*/,
+    spreadsheetId: process.env.GG_SPREADSHEET_ID,
+    productName: 'โลชั่นผิวขาว (ขายลูทีน)'
+  },
+  DD: {
+    pattern: /DD[^\s]*/,
+    spreadsheetId: process.env.DD_SPREADSHEET_ID,
+    productName: 'Product DD'
+  },
+  JJ: {
+    pattern: /JJ[^\s]*/,
+    spreadsheetId: process.env.JJ_SPREADSHEET_ID,
+    productName: 'Product JJ'
+  },
+  OTHER: {
+    spreadsheetId: process.env.OTHER_SPREADSHEET_ID
+  }
+};
+
 // === АВТОРИЗАЦИЯ GOOGLE SHEETS ===
 const auth = new google.auth.GoogleAuth({
   credentials: {
@@ -17,110 +39,118 @@ const auth = new google.auth.GoogleAuth({
 });
 
 // === ФУНКЦИЯ ЗАПИСИ В ТАБЛИЦУ ===
-async function appendToSheet(rowData) {
-  const client = await auth.getClient();
-  const sheets = google.sheets({ version: 'v4', auth: client });
+async function appendToSheet(rowData, spreadsheetId) {
+  try {
+    const client = await auth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
 
-  const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: 'A1',
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: {
-      values: [rowData]
-    }
-  });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'A1',
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: [rowData]
+      }
+    });
+  } catch (error) {
+    console.error(`Ошибка при записи в таблицу ${spreadsheetId}:`, error);
+    throw error;
+  }
 }
 
 // === ФУНКЦИЯ ОБРАБОТКИ ТЕКСТА ===
-// Функция принимает сырой текст и преобразует его в структурированный массив данных
 function processGroupedText(rawText) {
-  // Разбиваем входной текст на строки, удаляем пробелы в начале и конце каждой строки
   const lines = rawText.split(/\r?\n/).map(line => line.trim());
+  const result = {
+    GG: [],
+    DD: [],
+    JJ: [],
+    OTHER: []
+  };
   
-  // Массив для хранения всех обработанных строк
-  const result = [];
-  // Текущая обрабатываемая строка (массив с данными)
-  let row = [];
-  // Индекс для перемещения по строкам
+  let currentRow = [];
   let i = 0;
+  let currentType = null;
 
-  // Формируем текущую дату в формате дд/мм/гг
   const now = new Date();
-  const date = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)}`;
+  const date = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getFullYear()).slice(-2)}`;
 
-  // Обрабатываем каждую строку входного текста
   while (i < lines.length) {
     const line = lines[i];
 
-    // Если находим строку с GG (новый заказ)
-    if (line.includes('GG')) {
-      // Если текущая строка не пуста, добавляем её в результат
-      if (row.length > 0) result.push(row);
+    // Определяем тип заказа
+    let foundType = false;
+    for (const [type, config] of Object.entries(ORDER_TYPES)) {
+      if (type === 'OTHER') continue;
       
-      // Извлекаем номер заказа (GG + цифры)
-      const match = line.match(/GG[^\s]*/);
-      const orderNumber = match ? match[0] : line;
-      
-      // Создаем новую строку с 6 колонками:
-      // [0] - дата
-      // [1] - номер заказа
-      // [2] - название товара (фиксированное)
-      // [3] - FB текст (будет заполнен позже)
-      // [4] - COD информация
-      // [5] - информация о Lutein
-      row = [date, orderNumber, 'โลชั่นผิวขาว (ขายลูทีน)', '', '', ''];
+      if (line.match(config.pattern)) {
+        if (currentRow.length > 0 && currentType) {
+          result[currentType].push(currentRow);
+        }
+        
+        const match = line.match(config.pattern);
+        const orderNumber = match ? match[0] : line;
+        currentRow = [date, orderNumber, config.productName, '', '', ''];
+        currentType = type;
+        foundType = true;
+        break;
+      }
+    }
+
+    if (foundType) {
       i++;
       continue;
     }
 
-    // Если находим FB блок (информация о заказе)
+    // Если это начало нового блока текста и не найден известный тип заказа
+    if (currentRow.length === 0 && line.trim() !== '') {
+      currentType = 'OTHER';
+      currentRow = [date, 'UNKNOWN', line, '', '', ''];
+    }
+
+    // Обработка FB блока и другой информации
     if (line.startsWith('FB:')) {
       let fbBlock = line;
       i++;
-      // Собираем весь FB блок до пустой строки или нового GG
-      while (i < lines.length && lines[i].trim() !== '' && !lines[i].includes('GG')) {
+      while (i < lines.length && !lines[i].match(/GG|DD|JJ/) && lines[i].trim() !== '') {
         const current = lines[i].trim();
         fbBlock += ' ' + current;
 
-        // Ищем информацию о COD (наложенный платеж)
         const codMatch = current.match(/Cod\s+[\d.,]+\s+ກີບ/);
         if (codMatch) {
-          row[4] = codMatch[0]; // Сохраняем в 5-ю колонку
+          currentRow[4] = codMatch[0];
         }
 
-        // Ищем информацию о Lutein
         const luteinMatch = current.match(/ລູທີນ\s*\d+/);
         if (luteinMatch) {
-          row[5] = luteinMatch[0]; // Сохраняем в 6-ю колонку
+          currentRow[5] = luteinMatch[0];
         }
 
         i++;
       }
-      // Сохраняем весь FB блок в 4-ю колонку (индекс 3)
-      row[3] = fbBlock;
+      currentRow[3] = fbBlock;
       continue;
     }
 
-    // Если находим COD информацию вне FB блока
+    // Обработка COD и Lutein вне FB блока
     if (/Cod\s+[\d.,]+\s+ກີບ/.test(line)) {
-      row[4] = line.match(/Cod\s+[\d.,]+\s+ກີບ/)[0];
+      currentRow[4] = line.match(/Cod\s+[\d.,]+\s+ກີບ/)[0];
     }
 
-    // Если находим Lutein информацию вне FB блока
     const luteinMatch = line.match(/ລູທີນ\s*\d+/);
     if (luteinMatch) {
-      row[5] = luteinMatch[0];
+      currentRow[5] = luteinMatch[0];
     }
 
     i++;
   }
 
-  // Добавляем последнюю обработанную строку в результат
-  if (row.length > 0) result.push(row);
-  
-  // Возвращаем массив обработанных строк
+  // Добавляем последнюю строку
+  if (currentRow.length > 0 && currentType) {
+    result[currentType].push(currentRow);
+  }
+
   return result;
 }
 
@@ -135,16 +165,20 @@ app.post('/webhook', async (req, res) => {
         fs.appendFileSync('messages.log', log + '\n');
         console.log(log);
 
-        const grouped = processGroupedText(rawText);
-        console.log('[TRANSFORMED]');
-        for (let index = 0; index < grouped.length; index++) {
-          const row = grouped[index];
-          const line = `${index + 1}: ${row.join(' | ')}`;
-          console.log(line);
-          try {
-            await appendToSheet(row);
-          } catch (err) {
-            console.error("Ошибка при записи в Google Sheets", err);
+        const groupedByType = processGroupedText(rawText);
+        
+        // Обрабатываем каждый тип заказов
+        for (const [type, orders] of Object.entries(groupedByType)) {
+          if (orders.length === 0) continue;
+
+          console.log(`[TRANSFORMED ${type}]`);
+          for (const row of orders) {
+            console.log(`${type}: ${row.join(' | ')}`);
+            try {
+              await appendToSheet(row, ORDER_TYPES[type].spreadsheetId);
+            } catch (err) {
+              console.error(`Ошибка при записи ${type} в Google Sheets`, err);
+            }
           }
         }
       }
