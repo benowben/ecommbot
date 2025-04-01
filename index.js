@@ -1,11 +1,36 @@
-// const { Logtail } = require("@logtail/node");
-// const logtail = new Logtail(process.env.LOGTAIL_TOKEN);
+// Добавим в начало файла проверку всех необходимых переменных окружения
+const requiredEnvVars = {
+  LOGTAIL_TOKEN: process.env.LOGTAIL_TOKEN,
+  GOOGLE_CLIENT_EMAIL: process.env.GOOGLE_CLIENT_EMAIL,
+  GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY,
+  GG_SPREADSHEET_ID: process.env.GG_SPREADSHEET_ID,
+  DD_SPREADSHEET_ID: process.env.DD_SPREADSHEET_ID,
+  JJ_SPREADSHEET_ID: process.env.JJ_SPREADSHEET_ID,
+  OTHER_SPREADSHEET_ID: process.env.OTHER_SPREADSHEET_ID
+};
 
+for (const [name, value] of Object.entries(requiredEnvVars)) {
+  if (!value) {
+    throw new Error(`Отсутствует ${name} в переменных окружения`);
+  }
+}
+
+// Инициализация логирования
+const { Logtail } = require("@logtail/node");
+if (!process.env.LOGTAIL_TOKEN) {
+  throw new Error('Отсутствует LOGTAIL_TOKEN в переменных окружения');
+}
+const logtail = new Logtail(process.env.LOGTAIL_TOKEN);
+
+// Основные зависимости
 const express = require('express');
 const fs = require('fs');
 const { google } = require('googleapis');
+
+// Инициализация Express
 const app = express();
 app.use(express.json());
+
 
 // === КОНСТАНТЫ ===
 const ORDER_TYPES = {
@@ -53,7 +78,20 @@ async function appendToSheet(rowData, spreadsheetId) {
         values: [rowData]
       }
     });
+    // Логируем успешную запись
+    await logtail.info('Успешная запись в таблицу', {
+      spreadsheetId,
+      rowData,
+      action: 'append_success'
+    });
   } catch (error) {
+    // Логируем ошибку
+    await logtail.error('Ошибка при записи в таблицу', {
+      spreadsheetId,
+      rowData,
+      error: error.message,
+      action: 'append_error'
+    });
     console.error(`Ошибка при записи в таблицу ${spreadsheetId}:`, error);
     throw error;
   }
@@ -156,35 +194,76 @@ function processGroupedText(rawText) {
 
 // === ВЕБХУК ===
 app.post('/webhook', async (req, res) => {
-  const events = req.body.events;
-  if (events) {
-    for (const event of events) {
-      if (event.type === 'message' && event.message.type === 'text') {
-        const rawText = event.message.text;
-        const log = `[${new Date().toISOString()}] GROUP: ${event.source.groupId} USER: ${event.source.userId} TEXT: ${rawText}`;
-        fs.appendFileSync('messages.log', log + '\n');
-        console.log(log);
+  try {
+    const events = req.body.events;
+    if (events) {
+      for (const event of events) {
+        if (event.type === 'message' && event.message.type === 'text') {
+          const rawText = event.message.text;
+          
+          // Логируем входящее сообщение
+          const logMessage = {
+            timestamp: new Date().toISOString(),
+            groupId: event.source.groupId,
+            userId: event.source.userId,
+            text: rawText
+          };
+          
+          // Записываем в файл
+          fs.appendFileSync('messages.log', JSON.stringify(logMessage) + '\n');
+          console.log(logMessage);
+          
+          // Логируем в Logtail
+          await logtail.info('Получено новое сообщение', {
+            ...logMessage,
+            action: 'message_received'
+          });
 
-        const groupedByType = processGroupedText(rawText);
-        
-        // Обрабатываем каждый тип заказов
-        for (const [type, orders] of Object.entries(groupedByType)) {
-          if (orders.length === 0) continue;
+          const groupedByType = processGroupedText(rawText);
+          
+          // Обрабатываем каждый тип заказов
+          for (const [type, orders] of Object.entries(groupedByType)) {
+            if (orders.length === 0) continue;
 
-          console.log(`[TRANSFORMED ${type}]`);
-          for (const row of orders) {
-            console.log(`${type}: ${row.join(' | ')}`);
-            try {
-              await appendToSheet(row, ORDER_TYPES[type].spreadsheetId);
-            } catch (err) {
-              console.error(`Ошибка при записи ${type} в Google Sheets`, err);
+            // Логируем начало обработки типа
+            await logtail.info(`Начало обработки заказов типа ${type}`, {
+              type,
+              ordersCount: orders.length,
+              action: 'processing_start'
+            });
+
+            console.log(`[TRANSFORMED ${type}]`);
+            for (const row of orders) {
+              console.log(`${type}: ${row.join(' | ')}`);
+              try {
+                await appendToSheet(row, ORDER_TYPES[type].spreadsheetId);
+              } catch (err) {
+                // Ошибка уже залогирована в appendToSheet
+                console.error(`Ошибка при записи ${type} в Google Sheets`, err);
+              }
             }
+
+            // Логируем завершение обработки типа
+            await logtail.info(`Завершение обработки заказов типа ${type}`, {
+              type,
+              ordersCount: orders.length,
+              action: 'processing_complete'
+            });
           }
         }
       }
     }
+    res.sendStatus(200);
+  } catch (error) {
+    // Логируем критическую ошибку
+    await logtail.error('Критическая ошибка в webhook', {
+      error: error.message,
+      stack: error.stack,
+      action: 'webhook_error'
+    });
+    console.error('Критическая ошибка в webhook:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  res.sendStatus(200);
 });
 
 // === ДЕФОЛТНАЯ СТРАНИЦА ===
@@ -192,6 +271,21 @@ app.get('/', (req, res) => res.send('LINE bot is running'));
 
 // === ЗАПУСК ===
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server listening on ${PORT}`);
+  logtail.info('Сервер запущен', {
+    port: PORT,
+    action: 'server_start'
+  });
+});
+
+// Обработка ошибок сервера
+server.on('error', async (error) => {
+  await logtail.error('Ошибка сервера', {
+    error: error.message,
+    stack: error.stack,
+    action: 'server_error'
+  });
+  console.error('Server error:', error);
+  process.exit(1);
 });
