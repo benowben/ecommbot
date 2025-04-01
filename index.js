@@ -1,68 +1,51 @@
-// Инициализация логирования
-const { Logtail } = require("@logtail/node");
-
-// Функция для логирования (будет видна в Render logs)
-function logToRender(message, type = 'INFO') {
-  const timestamp = new Date().toISOString();
-  if (type === 'ERROR') {
-    console.error(`[${timestamp}] [${type}] ${message}`);
-  } else {
-    console.log(`[${timestamp}] [${type}] ${message}`);
-  }
-}
+console.log('=== СТАРТ ПРИЛОЖЕНИЯ ===');
+console.log('Время запуска:', new Date().toISOString());
 
 // Проверяем токен
 if (!process.env.LOGTAIL_TOKEN) {
-  logToRender('LOGTAIL_TOKEN не найден в переменных окружения', 'ERROR');
-  throw new Error('LOGTAIL_TOKEN не найден в переменных окружения');
+    console.error('LOGTAIL_TOKEN не найден в переменных окружения');
+    throw new Error('LOGTAIL_TOKEN не найден в переменных окружения');
 }
 
-try {
-  const logtail = new Logtail(process.env.LOGTAIL_TOKEN, {
-    sourceToken: process.env.LOGTAIL_TOKEN,
-    endpoint: 'https://s1254583.eu-nbg-2.betterstackdata.com',  // Указываем конкретный адрес сервера
-    sync: true
-  });
+console.log('LOGTAIL_TOKEN:', process.env.LOGTAIL_TOKEN.substring(0, 5) + '...');
 
-  logToRender('Попытка инициализации Logtail...');
-
-  // Проверяем инициализацию
-  logtail.info('Тестовое сообщение Logtail').then(() => {
-    logToRender('Logtail успешно инициализирован');
-  }).catch(error => {
-    logToRender(`Ошибка отправки тестового сообщения в Logtail: ${error.message}`, 'ERROR');
-  });
-
-} catch (error) {
-  logToRender(`Ошибка создания экземпляра Logtail: ${error.message}`, 'ERROR');
-}
-
+const { Logtail } = require("@logtail/node");
 const express = require('express');
 const fs = require('fs');
 const { google } = require('googleapis');
 
-// Проверка наличия всех необходимых переменных окружения
-const requiredEnvVars = {
-  LOGTAIL_TOKEN: process.env.LOGTAIL_TOKEN,
-  GOOGLE_CLIENT_EMAIL: process.env.GOOGLE_CLIENT_EMAIL,
-  GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY,
-  GG_SPREADSHEET_ID: process.env.GG_SPREADSHEET_ID,
-  DD_SPREADSHEET_ID: process.env.DD_SPREADSHEET_ID,
-  JJ_SPREADSHEET_ID: process.env.JJ_SPREADSHEET_ID,
-  OTHER_SPREADSHEET_ID: process.env.OTHER_SPREADSHEET_ID
-};
-
-for (const [name, value] of Object.entries(requiredEnvVars)) {
-  if (!value) {
-    throw new Error(`Отсутствует ${name} в переменных окружения`);
-  }
-}
-
-const logtail = new Logtail(process.env.LOGTAIL_TOKEN);
-
 // Инициализация Express
 const app = express();
 app.use(express.json());
+
+try {
+    console.log('Создаем экземпляр Logtail...');
+    const logtail = new Logtail(process.env.LOGTAIL_TOKEN, {
+        sourceToken: process.env.LOGTAIL_TOKEN,
+        apiKey: process.env.LOGTAIL_TOKEN,
+        endpoint: 'https://s1254583.eu-nbg-2.betterstackdata.com',
+        sync: true,
+        enrichWith: {
+            host: process.env.RENDER_EXTERNAL_URL || 'unknown',
+            environment: process.env.NODE_ENV || 'production',
+            service: 'line-bot-webhook'
+        },
+        throttleInterval: 5000,
+        maxLevel: 'debug'
+    });
+
+    console.log('Отправляем тестовое сообщение...');
+    logtail.info('Тестовое сообщение инициализации', {
+        test: true,
+        timestamp: new Date().toISOString()
+    });
+    
+    console.log('Тестовое сообщение отправлено успешно');
+
+} catch (error) {
+    console.error('Ошибка при создании экземпляра Logtail:', error);
+    console.error('Stack trace:', error.stack);
+}
 
 // === КОНСТАНТЫ ===
 const ORDER_TYPES = {
