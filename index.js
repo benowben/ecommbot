@@ -4,7 +4,6 @@ const { Logtail } = require("@logtail/node");
 // Функция для логирования (будет видна в Render logs)
 function logToRender(message, type = 'INFO') {
   const timestamp = new Date().toISOString();
-  // Render собирает все, что идет в console.log/error
   if (type === 'ERROR') {
     console.error(`[${timestamp}] [${type}] ${message}`);
   } else {
@@ -21,7 +20,7 @@ if (!process.env.LOGTAIL_TOKEN) {
 try {
   const logtail = new Logtail(process.env.LOGTAIL_TOKEN, {
     sourceToken: process.env.LOGTAIL_TOKEN,
-    endpoint: 'https://in.logtail.com',
+    endpoint: 'https://s1254583.eu-nbg-2.betterstackdata.com',  // Указываем конкретный адрес сервера
     sync: true
   });
 
