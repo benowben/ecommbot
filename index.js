@@ -1,51 +1,11 @@
-console.log('=== СТАРТ ПРИЛОЖЕНИЯ ===');
-console.log('Время запуска:', new Date().toISOString());
+// const { Logtail } = require("@logtail/node");
+// const logtail = new Logtail(process.env.LOGTAIL_TOKEN);
 
-// Проверяем токен
-if (!process.env.LOGTAIL_TOKEN) {
-    console.error('LOGTAIL_TOKEN не найден в переменных окружения');
-    throw new Error('LOGTAIL_TOKEN не найден в переменных окружения');
-}
-
-console.log('LOGTAIL_TOKEN:', process.env.LOGTAIL_TOKEN.substring(0, 5) + '...');
-
-const { Logtail } = require("@logtail/node");
 const express = require('express');
 const fs = require('fs');
 const { google } = require('googleapis');
-
-// Инициализация Express
 const app = express();
 app.use(express.json());
-
-try {
-    console.log('Создаем экземпляр Logtail...');
-    const logtail = new Logtail(process.env.LOGTAIL_TOKEN, {
-        sourceToken: process.env.LOGTAIL_TOKEN,
-        apiKey: process.env.LOGTAIL_TOKEN,
-        endpoint: 'https://s1254583.eu-nbg-2.betterstackdata.com',
-        sync: true,
-        enrichWith: {
-            host: process.env.RENDER_EXTERNAL_URL || 'unknown',
-            environment: process.env.NODE_ENV || 'production',
-            service: 'line-bot-webhook'
-        },
-        throttleInterval: 5000,
-        maxLevel: 'debug'
-    });
-
-    console.log('Отправляем тестовое сообщение...');
-    logtail.info('Тестовое сообщение инициализации', {
-        test: true,
-        timestamp: new Date().toISOString()
-    });
-    
-    console.log('Тестовое сообщение отправлено успешно');
-
-} catch (error) {
-    console.error('Ошибка при создании экземпляра Logtail:', error);
-    console.error('Stack trace:', error.stack);
-}
 
 // === КОНСТАНТЫ ===
 const ORDER_TYPES = {
@@ -93,20 +53,8 @@ async function appendToSheet(rowData, spreadsheetId) {
         values: [rowData]
       }
     });
-    console.log('Успешная запись в таблицу:', spreadsheetId);
-    await logtail.info('Успешная запись в таблицу', {
-      spreadsheetId,
-      rowData,
-      action: 'append_success'
-    });
   } catch (error) {
     console.error(`Ошибка при записи в таблицу ${spreadsheetId}:`, error);
-    await logtail.error('Ошибка при записи в таблицу', {
-      spreadsheetId,
-      rowData,
-      error: error.message,
-      action: 'append_error'
-    });
     throw error;
   }
 }
@@ -208,34 +156,14 @@ function processGroupedText(rawText) {
 
 // === ВЕБХУК ===
 app.post('/webhook', async (req, res) => {
-  try {
-    const events = req.body.events;
-    if (!events || !Array.isArray(events)) {
-      console.warn('Получены некорректные данные в webhook');
-      return res.status(400).json({ error: 'Invalid events format' });
-    }
-
+  const events = req.body.events;
+  if (events) {
     for (const event of events) {
       if (event.type === 'message' && event.message.type === 'text') {
         const rawText = event.message.text;
-        
-        // Логируем входящее сообщение
-        const logMessage = {
-          timestamp: new Date().toISOString(),
-          groupId: event.source.groupId,
-          userId: event.source.userId,
-          text: rawText
-        };
-        
-        // Записываем в файл и консоль
-        fs.appendFileSync('messages.log', JSON.stringify(logMessage) + '\n');
-        console.log(logMessage);
-        
-        // Логируем в Logtail
-        await logtail.info('Получено новое сообщение', {
-          ...logMessage,
-          action: 'message_received'
-        });
+        const log = `[${new Date().toISOString()}] GROUP: ${event.source.groupId} USER: ${event.source.userId} TEXT: ${rawText}`;
+        fs.appendFileSync('messages.log', log + '\n');
+        console.log(log);
 
         const groupedByType = processGroupedText(rawText);
         
@@ -255,16 +183,8 @@ app.post('/webhook', async (req, res) => {
         }
       }
     }
-    res.sendStatus(200);
-  } catch (error) {
-    console.error('Критическая ошибка в webhook:', error);
-    await logtail.error('Критическая ошибка в webhook', {
-      error: error.message,
-      stack: error.stack,
-      action: 'webhook_error'
-    });
-    res.status(500).json({ error: 'Internal server error' });
   }
+  res.sendStatus(200);
 });
 
 // === ДЕФОЛТНАЯ СТРАНИЦА ===
@@ -272,36 +192,6 @@ app.get('/', (req, res) => res.send('LINE bot is running'));
 
 // === ЗАПУСК ===
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`Server listening on ${PORT}`);
-  await logtail.info('Сервер запущен', {
-    port: PORT,
-    action: 'server_start'
-  });
-});
-
-// Обработка ошибок сервера
-server.on('error', async (error) => {
-  console.error('Server error:', error);
-  await logtail.error('Ошибка сервера', {
-    error: error.message,
-    stack: error.stack,
-    action: 'server_error'
-  });
-  process.exit(1);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('Получен сигнал завершения работы');
-  await logtail.info('Получен сигнал завершения работы', {
-    action: 'shutdown_signal'
-  });
-  
-  server.close(async () => {
-    await logtail.info('Сервер успешно остановлен', {
-      action: 'server_stopped'
-    });
-    process.exit(0);
-  });
 });
