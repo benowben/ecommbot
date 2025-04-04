@@ -60,8 +60,12 @@ async function appendToSheet(rowData, spreadsheetId) {
 }
 
 // === ФУНКЦИЯ ОБРАБОТКИ ТЕКСТА ===
+// Функция обрабатывает входящий текст и группирует заказы по типам (GG, DD, JJ, OTHER)
 function processGroupedText(rawText) {
+  // Разбиваем текст на строки и убираем лишние пробелы
   const lines = rawText.split(/\r?\n/).map(line => line.trim());
+  
+  // Инициализируем объект для хранения сгруппированных заказов
   const result = {
     GG: [],
     DD: [],
@@ -69,28 +73,34 @@ function processGroupedText(rawText) {
     OTHER: []
   };
   
-  let currentRow = [];
-  let i = 0;
-  let currentType = null;
+  // Переменные для отслеживания текущей обрабатываемой строки
+  let currentRow = [];  // Текущая строка данных
+  let i = 0;           // Индекс текущей строки в массиве
+  let currentType = null; // Текущий тип заказа (GG/DD/JJ/OTHER)
 
-  const now = new Date();
-  const date = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getFullYear()).slice(-2)}`;
-
+  // Обрабатываем каждую строку входного текста
   while (i < lines.length) {
     const line = lines[i];
 
-    // Определяем тип заказа
+    // Определяем тип заказа по шаблонам из ORDER_TYPES
     let foundType = false;
     for (const [type, config] of Object.entries(ORDER_TYPES)) {
-      if (type === 'OTHER') continue;
+      if (type === 'OTHER') continue; // Пропускаем тип OTHER, он обрабатывается отдельно
       
       if (line.match(config.pattern)) {
+        // Если есть незавершенная строка, добавляем её в результат
         if (currentRow.length > 0 && currentType) {
           result[currentType].push(currentRow);
         }
         
+        // Ищем дату в формате DD/MM/YY в начале строки
+        const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{2})/);
+        const date = dateMatch ? dateMatch[1] : '';
+        
+        // Создаем новую строку с номером заказа
         const match = line.match(config.pattern);
         const orderNumber = match ? match[0] : line;
+        // Формат строки: [дата, номер заказа, название продукта, FB информация, COD, количество Lutein]
         currentRow = [date, orderNumber, config.productName, '', '', ''];
         currentType = type;
         foundType = true;
@@ -103,25 +113,30 @@ function processGroupedText(rawText) {
       continue;
     }
 
-    // Если это начало нового блока текста и не найден известный тип заказа
+    // Обработка неизвестного типа заказа
     if (currentRow.length === 0 && line.trim() !== '') {
+      const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{2})/);
+      const date = dateMatch ? dateMatch[1] : '';
       currentType = 'OTHER';
       currentRow = [date, 'UNKNOWN', line, '', '', ''];
     }
 
-    // Обработка FB блока и другой информации
+    // Обработка FB блока (информация о Facebook заказе)
     if (line.startsWith('FB:')) {
       let fbBlock = line;
       i++;
+      // Собираем весь FB блок до следующего заказа или пустой строки
       while (i < lines.length && !lines[i].match(/GG|DD|JJ/) && lines[i].trim() !== '') {
         const current = lines[i].trim();
         fbBlock += ' ' + current;
 
+        // Ищем информацию о COD (наложенный платеж)
         const codMatch = current.match(/Cod\s+[\d.,]+\s+ກີບ/);
         if (codMatch) {
           currentRow[4] = codMatch[0];
         }
 
+        // Ищем информацию о количестве Lutein
         const luteinMatch = current.match(/ລູທີນ\s*\d+/);
         if (luteinMatch) {
           currentRow[5] = luteinMatch[0];
@@ -133,7 +148,7 @@ function processGroupedText(rawText) {
       continue;
     }
 
-    // Обработка COD и Lutein вне FB блока
+    // Обработка COD и Lutein информации вне FB блока
     if (/Cod\s+[\d.,]+\s+ກີບ/.test(line)) {
       currentRow[4] = line.match(/Cod\s+[\d.,]+\s+ກີບ/)[0];
     }
@@ -146,7 +161,7 @@ function processGroupedText(rawText) {
     i++;
   }
 
-  // Добавляем последнюю строку
+  // Добавляем последнюю необработанную строку в результат
   if (currentRow.length > 0 && currentType) {
     result[currentType].push(currentRow);
   }
