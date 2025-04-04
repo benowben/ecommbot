@@ -60,7 +60,6 @@ async function appendToSheet(rowData, spreadsheetId) {
 }
 
 // === ФУНКЦИЯ ОБРАБОТКИ ТЕКСТА ===
-// Функция обрабатывает входящий текст и группирует заказы по типам (GG, DD, JJ, OTHER)
 function processGroupedText(rawText) {
   // Разбиваем текст на строки и убираем лишние пробелы
   const lines = rawText.split(/\r?\n/).map(line => line.trim());
@@ -82,7 +81,7 @@ function processGroupedText(rawText) {
   while (i < lines.length) {
     const line = lines[i];
 
- // Определяем тип заказа по шаблонам из ORDER_TYPES
+    // Определяем тип заказа по шаблонам из ORDER_TYPES
     let foundType = false;
     for (const [type, config] of Object.entries(ORDER_TYPES)) {
       if (type === 'OTHER') continue; // Пропускаем тип OTHER, он обрабатывается отдельно
@@ -108,63 +107,63 @@ function processGroupedText(rawText) {
           }
         }
         
-        // Формат строки: [дата, номер заказа, название продукта, FB информация, COD, количество Lutein]
-        currentRow = [date, orderNumber, config.productName, '', '', ''];
+        currentRow = [date, orderNumber, 'продукт не найден', '', '', ''];
         currentType = type;
         foundType = true;
         break;
       }
-    } 
+    }
 
     if (foundType) {
       i++;
       continue;
     }
 
-  // Обработка неизвестного типа заказа
+    // Обработка неизвестного типа заказа
     if (currentRow.length === 0 && line.trim() !== '') {
       currentType = 'OTHER';
-      // Формируем текущую дату в нужном формате
       const now = new Date();
       const currentDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getFullYear()).slice(-2)}`;
-      currentRow = [currentDate, 'UNKNOWN', line, '', '', ''];
+      currentRow = [currentDate, 'UNKNOWN', 'продукт не найден', '', '', ''];
     }
 
-    // Обработка FB блока (информация о Facebook заказе)
+    // Обработка FB блока
     if (line.startsWith('FB:')) {
       let fbBlock = line;
+      let productFound = false;
       i++;
-      // Собираем весь FB блок до следующего заказа или пустой строки
+      
       while (i < lines.length && !lines[i].match(/GG|DD|JJ/) && lines[i].trim() !== '') {
         const current = lines[i].trim();
         fbBlock += ' ' + current;
 
-        // Ищем информацию о COD (наложенный платеж)
+        // Ищем информацию о COD
         const codMatch = current.match(/Cod\s+[\d.,]+\s+ກີບ/);
         if (codMatch) {
           currentRow[4] = codMatch[0];
-        }
-
-        // Ищем информацию о количестве Lutein
-        const luteinMatch = current.match(/ລູທີນ\s*\d+/);
-        if (luteinMatch) {
-          currentRow[5] = luteinMatch[0];
+          // Если перед COD была строка и это не служебная информация, считаем её названием продукта
+          if (i > 0) {
+            const previousLine = lines[i-1].trim();
+            if (previousLine && 
+                !previousLine.startsWith('FB:') && 
+                !previousLine.includes('ລູກຄ້າຮັບ') &&
+                !previousLine.includes('ສາຂາ')) {
+              currentRow[2] = previousLine;
+              productFound = true;
+            }
+          }
         }
 
         i++;
       }
       currentRow[3] = fbBlock;
+      
+      // Если продукт не был найден
+      if (!productFound) {
+        currentRow[2] = 'продукт не найден';
+      }
+      
       continue;
-    }
-
-    // Обработка COD и Lutein информации вне FB блока
-    if (/Cod\s+[\d.,]+\s+ກີບ/.test(line)) {
-      currentRow[4] = line.match(/Cod\s+[\d.,]+\s+ກີບ/)[0];
-    }
-
-    const luteinMatch = line.match(/ລູທີນ\s*\d+/);
-    if (luteinMatch) {
-      currentRow[5] = luteinMatch[0];
     }
 
     i++;
