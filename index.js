@@ -61,120 +61,146 @@ async function appendToSheet(rowData, spreadsheetId) {
 
 // === ФУНКЦИЯ ОБРАБОТКИ ТЕКСТА ===
 function processGroupedText(rawText) {
-  // Разбиваем текст на строки и убираем лишние пробелы
-  const lines = rawText.split(/\r?\n/).map(line => line.trim());
-  
-  // Инициализируем объект для хранения сгруппированных заказов
-  const result = {
-    GG: [],
-    DD: [],
-    JJ: [],
-    OTHER: []
-  };
-  
-  // Переменные для отслеживания текущей обрабатываемой строки
-  let currentRow = [];  // Текущая строка данных
-  let i = 0;           // Индекс текущей строки в массиве
-  let currentType = null; // Текущий тип заказа (GG/DD/JJ/OTHER)
+  // Проверка входных данных
+  if (!rawText) {
+    console.log('Получен пустой текст');
+    return { GG: [], DD: [], JJ: [], OTHER: [] };
+  }
 
-  // Обрабатываем каждую строку входного текста
-  while (i < lines.length) {
-    const line = lines[i];
+  try {
+    // Разбиваем текст на строки и убираем лишние пробелы
+    const lines = rawText.split(/\r?\n/).map(line => line?.trim() || '').filter(Boolean);
+    
+    // Инициализируем объект для хранения сгруппированных заказов
+    const result = { GG: [], DD: [], JJ: [], OTHER: [] };
+    
+    let currentRow = [];
+    let i = 0;
+    let currentType = null;
 
-    // Определяем тип заказа по шаблонам из ORDER_TYPES
-    let foundType = false;
-    for (const [type, config] of Object.entries(ORDER_TYPES)) {
-      if (type === 'OTHER') continue; // Пропускаем тип OTHER, он обрабатывается отдельно
+    while (i < lines.length) {
+      const line = lines[i];
       
-      if (line.match(config.pattern)) {
-        // Если есть незавершенная строка, добавляем её в результат
-        if (currentRow.length > 0 && currentType) {
-          result[currentType].push(currentRow);
-        }
+      // Поиск типа заказа
+      let foundType = false;
+      for (const [type, config] of Object.entries(ORDER_TYPES)) {
+        if (type === 'OTHER') continue;
         
-        // Создаем новую строку с номером заказа
-        const match = line.match(config.pattern);
-        const orderNumber = match ? match[0] : line;
-        
-        // Проверяем следующую строку на наличие даты
-        let date = 'дата не найдена'; // Значение по умолчанию
-        if (i + 1 < lines.length) {
-          const nextLine = lines[i + 1];
-          const dateMatch = nextLine.match(/(\d{2}\/\d{2}\/\d{2})(?:[-\s\w]*)?/);
-          if (dateMatch) {
-            date = dateMatch[1];
-            i++; // Пропускаем строку с датой
+        if (config.pattern && line.match(config.pattern)) {
+          // Сохраняем предыдущий заказ
+          if (currentRow.length > 0 && currentType) {
+            result[currentType].push([...currentRow]);
           }
-        }
-        
-        currentRow = [date, orderNumber, 'продукт не найден', '', '', ''];
-        currentType = type;
-        foundType = true;
-        break;
-      }
-    }
-
-    if (foundType) {
-      i++;
-      continue;
-    }
-
-    // Обработка неизвестного типа заказа
-    if (currentRow.length === 0 && line.trim() !== '') {
-      currentType = 'OTHER';
-      const now = new Date();
-      const currentDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getFullYear()).slice(-2)}`;
-      currentRow = [currentDate, 'UNKNOWN', 'продукт не найден', '', '', ''];
-    }
-
-    // Обработка FB блока
-    if (line.startsWith('FB:')) {
-      let fbBlock = line;
-      let productFound = false;
-      i++;
-      
-      while (i < lines.length && !lines[i].match(/GG|DD|JJ/) && lines[i].trim() !== '') {
-        const current = lines[i].trim();
-        fbBlock += ' ' + current;
-
-        // Ищем информацию о COD
-        const codMatch = current.match(/Cod\s+[\d.,]+\s+ກີບ/);
-        if (codMatch) {
-          currentRow[4] = codMatch[0];
-          // Если перед COD была строка и это не служебная информация, считаем её названием продукта
-          if (i > 0) {
-            const previousLine = lines[i-1].trim();
-            if (previousLine && 
-                !previousLine.startsWith('FB:') && 
-                !previousLine.includes('ລູກຄ້າຮັບ') &&
-                !previousLine.includes('ສາຂາ')) {
-              currentRow[2] = previousLine;
-              productFound = true;
+          
+          // Обработка номера заказа
+          const match = line.match(config.pattern);
+          const orderNumber = match ? match[0] : 'номер не найден';
+          
+          // Обработка даты
+          let date = 'дата не найдена';
+          if (i + 1 < lines.length) {
+            const nextLine = lines[i + 1];
+            const dateMatch = nextLine?.match(/(\d{2}\/\d{2}\/\d{2})(?:[-\s\w]*)?/);
+            if (dateMatch) {
+              date = dateMatch[1];
+              i++;
             }
           }
+          
+          // Инициализация новой строки
+          currentRow = [
+            date,
+            orderNumber,
+            config.productName || 'продукт не найден',
+            'FB инфо не найдена',
+            'cod не найден',
+            ''
+          ];
+          currentType = type;
+          foundType = true;
+          break;
+        }
+      }
+
+      if (foundType) {
+        i++;
+        continue;
+      }
+
+      // Обработка OTHER типа
+      if (currentRow.length === 0 && line) {
+        currentType = 'OTHER';
+        const now = new Date();
+        const currentDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getFullYear()).slice(-2)}`;
+        currentRow = [currentDate, 'UNKNOWN', line, 'FB инфо не найдена', 'cod не найден', ''];
+      }
+
+      // Обработка FB блока
+      if (line.startsWith('FB:')) {
+        let fbBlock = line;
+        let productFound = false;
+        let codFound = false;
+        i++;
+        
+        // Сбор FB информации
+        while (i < lines.length) {
+          const current = lines[i]?.trim();
+          if (!current || current.match(/GG|DD|JJ/)) break;
+          
+          fbBlock += ' ' + current;
+
+          // Поиск COD
+          const codMatch = current.match(/Cod\s+[\d.,]+\s+ກີບ/);
+          if (codMatch) {
+            currentRow[4] = codMatch[0];
+            codFound = true;
+            
+            // Поиск продукта перед COD
+            if (i > 0) {
+              const previousLine = lines[i-1]?.trim();
+              if (previousLine && 
+                  !previousLine.startsWith('FB:') && 
+                  !previousLine.includes('ລູກຄ້າຮັບ') &&
+                  !previousLine.includes('ສາຂາ')) {
+                currentRow[2] = previousLine;
+                productFound = true;
+              }
+            }
+          }
+
+          i++;
         }
 
-        i++;
+        // Обновление FB информации
+        if (fbBlock.trim() !== 'FB:') {
+          currentRow[3] = fbBlock;
+        }
+        
+        // Проверка наличия данных
+        if (!productFound && currentType !== 'OTHER') {
+          currentRow[2] = 'продукт не найден';
+        }
+        if (!codFound) {
+          currentRow[4] = 'cod не найден';
+        }
+        
+        continue;
       }
-      currentRow[3] = fbBlock;
-      
-      // Если продукт не был найден
-      if (!productFound) {
-        currentRow[2] = 'продукт не найден';
-      }
-      
-      continue;
+
+      i++;
     }
 
-    i++;
-  }
+    // Добавление последнего заказа
+    if (currentRow.length > 0 && currentType) {
+      result[currentType].push([...currentRow]);
+    }
 
-  // Добавляем последнюю необработанную строку в результат
-  if (currentRow.length > 0 && currentType) {
-    result[currentType].push(currentRow);
-  }
+    return result;
 
-  return result;
+  } catch (error) {
+    console.error('Ошибка при обработке текста:', error);
+    return { GG: [], DD: [], JJ: [], OTHER: [] };
+  }
 }
 
 // === ВЕБХУК ===
