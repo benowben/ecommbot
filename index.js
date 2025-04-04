@@ -82,7 +82,7 @@ function processGroupedText(rawText) {
   while (i < lines.length) {
     const line = lines[i];
 
-  // Определяем тип заказа по шаблонам из ORDER_TYPES
+ // Определяем тип заказа по шаблонам из ORDER_TYPES
     let foundType = false;
     for (const [type, config] of Object.entries(ORDER_TYPES)) {
       if (type === 'OTHER') continue; // Пропускаем тип OTHER, он обрабатывается отдельно
@@ -98,7 +98,7 @@ function processGroupedText(rawText) {
         const orderNumber = match ? match[0] : line;
         
         // Проверяем следующую строку на наличие даты
-        let date = '';
+        let date = 'дата не найдена'; // Значение по умолчанию
         if (i + 1 < lines.length) {
           const nextLine = lines[i + 1];
           const dateMatch = nextLine.match(/(\d{2}\/\d{2}\/\d{2})(?:[-\s\w]*)?/);
@@ -114,17 +114,20 @@ function processGroupedText(rawText) {
         foundType = true;
         break;
       }
-    }
+    } 
 
     if (foundType) {
       i++;
       continue;
     }
 
-    // Обработка неизвестного типа заказа
+  // Обработка неизвестного типа заказа
     if (currentRow.length === 0 && line.trim() !== '') {
       currentType = 'OTHER';
-      currentRow = [date, 'UNKNOWN', line, '', '', ''];
+      // Формируем текущую дату в нужном формате
+      const now = new Date();
+      const currentDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getFullYear()).slice(-2)}`;
+      currentRow = [currentDate, 'UNKNOWN', line, '', '', ''];
     }
 
     // Обработка FB блока (информация о Facebook заказе)
