@@ -82,7 +82,7 @@ function processGroupedText(rawText) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Определяем тип заказа по шаблонам из ORDER_TYPES
+  // Определяем тип заказа по шаблонам из ORDER_TYPES
     let foundType = false;
     for (const [type, config] of Object.entries(ORDER_TYPES)) {
       if (type === 'OTHER') continue; // Пропускаем тип OTHER, он обрабатывается отдельно
@@ -93,13 +93,21 @@ function processGroupedText(rawText) {
           result[currentType].push(currentRow);
         }
         
-        // Ищем дату в формате DD/MM/YY, возможно с дополнительным текстом после даты
-        const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{2})(?:[-\s\w]*)?/);
-        const date = dateMatch ? dateMatch[1] : '';
-        
         // Создаем новую строку с номером заказа
         const match = line.match(config.pattern);
         const orderNumber = match ? match[0] : line;
+        
+        // Проверяем следующую строку на наличие даты
+        let date = '';
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          const dateMatch = nextLine.match(/(\d{2}\/\d{2}\/\d{2})(?:[-\s\w]*)?/);
+          if (dateMatch) {
+            date = dateMatch[1];
+            i++; // Пропускаем строку с датой
+          }
+        }
+        
         // Формат строки: [дата, номер заказа, название продукта, FB информация, COD, количество Lutein]
         currentRow = [date, orderNumber, config.productName, '', '', ''];
         currentType = type;
