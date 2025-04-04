@@ -93,8 +93,8 @@ function processGroupedText(rawText) {
           result[currentType].push(currentRow);
         }
         
-        // Ищем дату в формате DD/MM/YY в начале строки
-        const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{2})/);
+        // Ищем дату в формате DD/MM/YY, возможно с дополнительным текстом после даты
+        const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{2})(?:[-\s\w]*)?/);
         const date = dateMatch ? dateMatch[1] : '';
         
         // Создаем новую строку с номером заказа
@@ -115,8 +115,6 @@ function processGroupedText(rawText) {
 
     // Обработка неизвестного типа заказа
     if (currentRow.length === 0 && line.trim() !== '') {
-      const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{2})/);
-      const date = dateMatch ? dateMatch[1] : '';
       currentType = 'OTHER';
       currentRow = [date, 'UNKNOWN', line, '', '', ''];
     }
